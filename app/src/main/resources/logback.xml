@@ -1,0 +1,15 @@
+<configuration>
+
+    <!-- 控制台输出 -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 关键：只打印 ERROR -->
+    <root level="ERROR">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+</configuration>

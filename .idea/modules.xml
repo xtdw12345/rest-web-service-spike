@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/rest-web-service-spike.app.main.iml" filepath="$PROJECT_DIR$/.idea/modules/app/rest-web-service-spike.app.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/rest-web-service-spike.app.test.iml" filepath="$PROJECT_DIR$/.idea/modules/app/rest-web-service-spike.app.test.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/container/rest-web-service-spike.container.main.iml" filepath="$PROJECT_DIR$/.idea/modules/container/rest-web-service-spike.container.main.iml" />
+    </modules>
+  </component>
+</project>
