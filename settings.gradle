@@ -12,3 +12,4 @@ plugins {
 
 rootProject.name = 'rest-web-service-spike'
 include('app')
+include('container')
