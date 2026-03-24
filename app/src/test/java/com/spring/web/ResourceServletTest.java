@@ -21,8 +21,7 @@ import java.net.http.HttpResponse;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -63,7 +62,7 @@ public class ResourceServletTest extends ServletTest {
 
     @Test
     public void should_use_status_from_response() throws Exception {
-        response(HttpStatus.NOT_MODIFIED_304, new MultivaluedHashMap<>(), new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE);
+        new OutboundResponseBuilder().withStatus(Response.Status.NOT_MODIFIED.getStatusCode()).build();
 
         HttpResponse httpResponse = get("/");
 
@@ -76,8 +75,7 @@ public class ResourceServletTest extends ServletTest {
         NewCookie userId= new NewCookie("USER_ID", "user");
         MultivaluedMap<String, Object>  headers = new MultivaluedHashMap<>();
         headers.addAll("Set-Cookie", sessionId, userId);
-
-        response(HttpStatus.NOT_MODIFIED_304, headers, new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE);
+        new OutboundResponseBuilder().withHeaders(headers).withStatus(Response.Status.NOT_MODIFIED.getStatusCode()).build();
 
         HttpResponse httpResponse = get("/");
 
@@ -87,35 +85,60 @@ public class ResourceServletTest extends ServletTest {
 
     @Test
     public void should_write_entity_to_http_response_using_body_writer() throws Exception {
-        response(HttpStatus.OK_200, new MultivaluedHashMap<>(), new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE);
+        new OutboundResponseBuilder().withEntity(new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE).build();
 
         HttpResponse httpResponse = get("/");
 
         assertThat(httpResponse.body().toString()).isEqualTo("hello");
     }
 
-    private void response(int status, MultivaluedMap<String, Object> headers, GenericEntity entity, Annotation[] annotations, MediaType mediaType) {
-        OutboundResponse outboundResponse = mock(OutboundResponse.class);
-        when(outboundResponse.getStatus()).thenReturn(status);
-        when(outboundResponse.getHeaders()).thenReturn(headers);
-        when(outboundResponse.getGenericEntity()).thenReturn(entity);
-        when(outboundResponse.getAnnotations()).thenReturn(annotations);
-        when(outboundResponse.getMediaType()).thenReturn(mediaType);
+    class OutboundResponseBuilder {
+        private int status = Response.Status.OK.getStatusCode();
+        private MultivaluedMap<String, Object> headers = new MultivaluedHashMap<>();
+        private GenericEntity entity = new GenericEntity("hello", String.class);
+        private Annotation[] annotations = new Annotation[0];
+        private MediaType mediaType = MediaType.TEXT_PLAIN_TYPE;
 
-        when(providers.getMessageBodyWriter(eq(String.class), eq(entity.getType()), eq(annotations), eq(mediaType))).thenReturn(new MessageBodyWriter<>() {
-            @Override
-            public boolean isWriteable(Class<?> type, Type genericType, Annotation[] annotations, MediaType mediaType) {
-                return false;
-            }
+        public OutboundResponseBuilder withStatus(int status) {
+            this.status = status;
+            return this;
+        }
 
-            @Override
-            public void writeTo(String s, Class<?> type, Type genericType, Annotation[] annotations, MediaType mediaType, MultivaluedMap<String, Object> httpHeaders, OutputStream entityStream) throws IOException, WebApplicationException {
-                PrintWriter writer = new PrintWriter(entityStream);
-                writer.print(s);
-                writer.flush();
-            }
-        });
+        public OutboundResponseBuilder withHeaders(MultivaluedMap<String, Object> headers) {
+            this.headers = headers;
+            return this;
+        }
 
-        when(router.dispatch(any(), eq(resourceContext))).thenReturn(outboundResponse);
+        public OutboundResponseBuilder withEntity(GenericEntity entity,  Annotation[] annotations, MediaType mediaType) {
+            this.entity = entity;
+            this.annotations = annotations;
+            this.mediaType = mediaType;
+            return this;
+        }
+
+        public void build() {
+            OutboundResponse outboundResponse = mock(OutboundResponse.class);
+            when(outboundResponse.getStatus()).thenReturn(status);
+            when(outboundResponse.getHeaders()).thenReturn(headers);
+            when(outboundResponse.getGenericEntity()).thenReturn(entity);
+            when(outboundResponse.getAnnotations()).thenReturn(annotations);
+            when(outboundResponse.getMediaType()).thenReturn(mediaType);
+
+            when(providers.getMessageBodyWriter(eq(String.class), eq(entity.getType()), same(annotations), eq(mediaType))).thenReturn(new MessageBodyWriter<>() {
+                @Override
+                public boolean isWriteable(Class<?> type, Type genericType, Annotation[] annotations2, MediaType mediaType2) {
+                    return false;
+                }
+
+                @Override
+                public void writeTo(String s, Class<?> type, Type genericType, Annotation[] annotations2, MediaType mediaType2, MultivaluedMap<String, Object> httpHeaders, OutputStream entityStream) throws IOException, WebApplicationException {
+                    PrintWriter writer = new PrintWriter(entityStream);
+                    writer.print(s);
+                    writer.flush();
+                }
+            });
+
+            when(router.dispatch(any(), eq(resourceContext))).thenReturn(outboundResponse);
+        }
     }
 }
