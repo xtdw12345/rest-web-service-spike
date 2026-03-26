@@ -11,6 +11,7 @@ import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.container.ResourceContext;
 import javax.ws.rs.core.GenericEntity;
 import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.ext.ExceptionMapper;
 import javax.ws.rs.ext.MessageBodyWriter;
 import javax.ws.rs.ext.Providers;
 import javax.ws.rs.ext.RuntimeDelegate;
@@ -32,7 +33,16 @@ public class ResourceServlet extends HttpServlet {
         try {
             ResourceRouter resourceRouter = runtime.getResourceRouter();
             ResourceContext resourceContext = runtime.createResourceContext(req, res);
-            OutboundResponse response = resourceRouter.dispatch(req, resourceContext);
+            OutboundResponse response;
+            try {
+                response = resourceRouter.dispatch(req, resourceContext);
+            } catch (WebApplicationException e) {
+                response = (OutboundResponse) e.getResponse();
+            } catch (Throwable e) {
+                Providers providers = runtime.getProviders();
+                ExceptionMapper exceptionMapper = providers.getExceptionMapper(e.getClass());
+                response = (OutboundResponse) exceptionMapper.toResponse(e);
+            }
             res.setStatus(response.getStatus());
             MultivaluedMap<String, Object> headers = response.getHeaders();
             for (String name : headers.keySet()) {

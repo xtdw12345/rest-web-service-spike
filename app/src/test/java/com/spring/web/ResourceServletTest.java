@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.container.ResourceContext;
 import javax.ws.rs.core.*;
+import javax.ws.rs.ext.ExceptionMapper;
 import javax.ws.rs.ext.MessageBodyWriter;
 import javax.ws.rs.ext.Providers;
 import javax.ws.rs.ext.RuntimeDelegate;
@@ -19,6 +20,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -62,7 +64,7 @@ public class ResourceServletTest extends ServletTest {
 
     @Test
     public void should_use_status_from_response() throws Exception {
-        new OutboundResponseBuilder().withStatus(Response.Status.NOT_MODIFIED.getStatusCode()).build();
+        new OutboundResponseBuilder().withStatus(Response.Status.NOT_MODIFIED).response();
 
         HttpResponse httpResponse = get("/");
 
@@ -71,11 +73,7 @@ public class ResourceServletTest extends ServletTest {
 
     @Test
     public void should_use_headers_from_response() throws Exception {
-        NewCookie sessionId= new NewCookie("SESSION_ID", "session");
-        NewCookie userId= new NewCookie("USER_ID", "user");
-        MultivaluedMap<String, Object>  headers = new MultivaluedHashMap<>();
-        headers.addAll("Set-Cookie", sessionId, userId);
-        new OutboundResponseBuilder().withHeaders(headers).withStatus(Response.Status.NOT_MODIFIED.getStatusCode()).build();
+        new OutboundResponseBuilder().withHeaders(HttpHeaders.SET_COOKIE, new NewCookie("SESSION_ID", "session"), new NewCookie("USER_ID", "user")).withStatus(Response.Status.NOT_MODIFIED).response();
 
         HttpResponse httpResponse = get("/");
 
@@ -85,27 +83,54 @@ public class ResourceServletTest extends ServletTest {
 
     @Test
     public void should_write_entity_to_http_response_using_body_writer() throws Exception {
-        new OutboundResponseBuilder().withEntity(new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE).build();
+        new OutboundResponseBuilder().withEntity(new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE).response();
 
         HttpResponse httpResponse = get("/");
 
         assertThat(httpResponse.body().toString()).isEqualTo("hello");
     }
 
+    @Test
+    public void should_use_response_in_web_application_exception() throws Exception {
+        new OutboundResponseBuilder()
+                .withStatus(Response.Status.FORBIDDEN)
+                .withEntity(new GenericEntity("hello", String.class), new Annotation[0], MediaType.TEXT_PLAIN_TYPE)
+                .withHeaders(HttpHeaders.SET_COOKIE)
+                .thrown();
+
+        HttpResponse httpResponse = get("/");
+
+        assertThat(httpResponse.body().toString()).isEqualTo("hello");
+        assertThat(httpResponse.statusCode()).isEqualTo(Response.Status.FORBIDDEN.getStatusCode());
+        assertThat(httpResponse.headers());
+    }
+
+    @Test
+    public void should_build_response_from_exception() throws Exception {
+        when(router.dispatch(any(), eq(resourceContext))).thenThrow(RuntimeException.class);
+        when(providers.getExceptionMapper(eq(RuntimeException.class))).thenReturn(exception -> new OutboundResponseBuilder()
+                .withStatus(Response.Status.FORBIDDEN).build());
+
+        HttpResponse httpResponse = get("/");
+        assertThat(httpResponse.statusCode()).isEqualTo(Response.Status.FORBIDDEN.getStatusCode());
+
+    }
+
     class OutboundResponseBuilder {
-        private int status = Response.Status.OK.getStatusCode();
+        private Response.Status status = Response.Status.OK;
         private MultivaluedMap<String, Object> headers = new MultivaluedHashMap<>();
         private GenericEntity entity = new GenericEntity("hello", String.class);
         private Annotation[] annotations = new Annotation[0];
         private MediaType mediaType = MediaType.TEXT_PLAIN_TYPE;
 
-        public OutboundResponseBuilder withStatus(int status) {
+        public OutboundResponseBuilder withStatus(Response.Status status) {
             this.status = status;
             return this;
         }
 
-        public OutboundResponseBuilder withHeaders(MultivaluedMap<String, Object> headers) {
-            this.headers = headers;
+        public OutboundResponseBuilder withHeaders(String key, Object... values) {
+            this.headers = new MultivaluedHashMap<>();
+            headers.addAll(key, values);
             return this;
         }
 
@@ -116,14 +141,35 @@ public class ResourceServletTest extends ServletTest {
             return this;
         }
 
-        public void build() {
+        public void response() {
+            build(response -> when(router.dispatch(any(), eq(resourceContext))).thenReturn(response));
+        }
+
+        public void thrown() {
+            build(response -> {
+                WebApplicationException webApplicationException = new WebApplicationException(response);
+                when(router.dispatch(any(), eq(resourceContext))).thenThrow(webApplicationException);
+            });
+        }
+
+        public void build(Consumer<OutboundResponse> consumer) {
+            OutboundResponse outboundResponse = build();
+            consumer.accept(outboundResponse);
+        }
+
+        public OutboundResponse build() {
             OutboundResponse outboundResponse = mock(OutboundResponse.class);
-            when(outboundResponse.getStatus()).thenReturn(status);
+            when(outboundResponse.getStatus()).thenReturn(status.getStatusCode());
+            when(outboundResponse.getStatusInfo()).thenReturn(status);
             when(outboundResponse.getHeaders()).thenReturn(headers);
             when(outboundResponse.getGenericEntity()).thenReturn(entity);
             when(outboundResponse.getAnnotations()).thenReturn(annotations);
             when(outboundResponse.getMediaType()).thenReturn(mediaType);
+            stubMessageWriter();
+            return outboundResponse;
+        }
 
+        private void stubMessageWriter() {
             when(providers.getMessageBodyWriter(eq(String.class), eq(entity.getType()), same(annotations), eq(mediaType))).thenReturn(new MessageBodyWriter<>() {
                 @Override
                 public boolean isWriteable(Class<?> type, Type genericType, Annotation[] annotations2, MediaType mediaType2) {
@@ -137,8 +183,6 @@ public class ResourceServletTest extends ServletTest {
                     writer.flush();
                 }
             });
-
-            when(router.dispatch(any(), eq(resourceContext))).thenReturn(outboundResponse);
         }
     }
 }
